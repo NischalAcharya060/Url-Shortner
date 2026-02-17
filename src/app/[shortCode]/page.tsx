@@ -1,6 +1,17 @@
 import { redirect } from 'next/navigation';
-import { db } from '@/lib/db';
+import { firestoreDb } from '@/lib/firestore';
 import { headers } from 'next/headers';
+
+// Pages that should NOT be treated as short codes
+const RESERVED_PATHS = [
+    'login',
+    'register',
+    'dashboard',
+    'api',
+    'favicon.ico',
+    '_next',
+    '',
+];
 
 export default async function ShortUrlRedirect({
                                                    params,
@@ -8,19 +19,28 @@ export default async function ShortUrlRedirect({
     params: Promise<{ shortCode: string }>;
 }) {
     const { shortCode } = await params;
-    const urlData = await db.get(shortCode);
 
-    if (!urlData) {
-        redirect('/?error=notfound');
+    // If it's a reserved path, redirect to home
+    if (RESERVED_PATHS.includes(shortCode.toLowerCase())) {
+        redirect('/');
     }
 
-    // Track the click
-    const headersList = await headers();
-    const userAgent = headersList.get('user-agent') || undefined;
-    const referer = headersList.get('referer') || undefined;
+    try {
+        const urlData = await firestoreDb.get(shortCode);
 
-    await db.incrementClicks(shortCode, userAgent, referer);
+        if (!urlData) {
+            redirect('/?error=notfound');
+        }
 
-    // Redirect to the original URL
-    redirect(urlData.originalUrl);
+        const headersList = await headers();
+        const userAgent = headersList.get('user-agent') || undefined;
+        const referer = headersList.get('referer') || undefined;
+
+        await firestoreDb.incrementClicks(shortCode, userAgent, referer);
+
+        redirect(urlData.originalUrl);
+    } catch (error) {
+        console.error('Error in redirect:', error);
+        redirect('/?error=notfound');
+    }
 }
